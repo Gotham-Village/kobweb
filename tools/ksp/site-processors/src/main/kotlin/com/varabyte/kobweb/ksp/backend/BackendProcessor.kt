@@ -21,7 +21,6 @@ import com.varabyte.kobweb.ksp.common.PACKAGE_MAPPING_API_FQN
 import com.varabyte.kobweb.ksp.common.getPackageMappings
 import com.varabyte.kobweb.ksp.common.processRoute
 import com.varabyte.kobweb.ksp.symbol.getAnnotationsByName
-import com.varabyte.kobweb.ksp.symbol.nameWithoutExtension
 import com.varabyte.kobweb.ksp.symbol.suppresses
 import com.varabyte.kobweb.project.backend.ApiEntry
 import com.varabyte.kobweb.project.backend.ApiStreamEntry
@@ -37,12 +36,15 @@ class BackendProcessor(
     private val genFile: String,
     private val qualifiedApiPackage: String,
 ) : SymbolProcessor {
-    private lateinit var initMethods: List<InitApiEntry>
-    private lateinit var apiMethods: List<ApiEntry>
-    private val apiStreams = mutableListOf<ApiStreamEntry>()
+    private val apiVisitor = ApiVisitor()
+
+    private val initMethods = mutableListOf<InitApiEntry>()
+
+    private val apiMethodsDeclarations = mutableListOf<KSFunctionDeclaration>()
+    private val apiStreamsDeclarations = mutableListOf<KSPropertyDeclaration>()
 
     // fqPkg to subdir, e.g. "api.id._as._int" to "int"
-    private lateinit var packageMappings: Map<String, String>
+    private val packageMappings = mutableMapOf<String, String>()
 
     // We track all files we depend on so that ksp can perform smart recompilation
     // Even though our output is aggregating so generally requires full reprocessing, this at minimum means processing
@@ -50,30 +52,25 @@ class BackendProcessor(
     private val fileDependencies = mutableListOf<KSFile>()
 
     override fun process(resolver: Resolver): List<KSAnnotated> {
-        initMethods = resolver.getSymbolsWithAnnotation(INIT_API_FQN).map { annotatedFun ->
+        initMethods += resolver.getSymbolsWithAnnotation(INIT_API_FQN).map { annotatedFun ->
             fileDependencies.add(annotatedFun.containingFile!!)
             val name = (annotatedFun as KSFunctionDeclaration).qualifiedName!!.asString()
             InitApiEntry(name)
-        }.toList()
+        }
 
-        val allFiles = resolver.getAllFiles()
+        val newFiles = resolver.getNewFiles()
 
         // package mapping must be processed before api methods & streams
-        packageMappings = allFiles.flatMap { file ->
+        packageMappings += newFiles.flatMap { file ->
             getPackageMappings(file, qualifiedApiPackage, PACKAGE_MAPPING_API_FQN, logger).toList()
                 .also { if (it.isNotEmpty()) fileDependencies.add(file) }
-        }.toMap()
+        }
 
-        apiMethods = resolver.getSymbolsWithAnnotation(API_FQN)
+        apiMethodsDeclarations += resolver.getSymbolsWithAnnotation(API_FQN)
             .filterIsInstance<KSFunctionDeclaration>() // @Api for stream properties is handled separately
-            .mapNotNull { annotatedFun ->
-                processApiFun(annotatedFun, qualifiedApiPackage, packageMappings, logger)
-                    ?.also { fileDependencies.add(annotatedFun.containingFile!!) }
-            }.toList()
 
-        val visitor = ApiVisitor()
-        allFiles.forEach { file ->
-            file.accept(visitor, Unit)
+        newFiles.forEach { file ->
+            file.accept(apiVisitor, Unit)
         }
 
         return emptyList()
@@ -109,20 +106,7 @@ class BackendProcessor(
                 return
             }
             fileDependencies.add(property.containingFile!!)
-
-            val routeOverride = property.getAnnotationsByName(API_FQN)
-                .firstNotNullOfOrNull { it.arguments.firstOrNull()?.value?.toString() }
-
-            val resolvedRoute = processRoute(
-                pkg = property.packageName.asString(),
-                slugFromFile = property.containingFile!!.nameWithoutExtension.lowercase(),
-                routeOverride = routeOverride,
-                qualifiedPackage = qualifiedApiPackage,
-                packageMappings = packageMappings,
-                supportDynamicRoute = false,
-            )
-
-            apiStreams.add(ApiStreamEntry(property.qualifiedName!!.asString(), resolvedRoute))
+            apiStreamsDeclarations += property
         }
 
         override fun visitClassDeclaration(classDeclaration: KSClassDeclaration, data: Unit) {
@@ -135,6 +119,28 @@ class BackendProcessor(
     }
 
     override fun finish() {
+        // api declarations must be processed at the end, as they rely on package mappings,
+        // which may be populated over several rounds
+        val apiMethods = apiMethodsDeclarations.mapNotNull { annotatedFun ->
+            processApiFun(annotatedFun, qualifiedApiPackage, packageMappings, logger)
+                ?.also { fileDependencies.add(annotatedFun.containingFile!!) }
+        }
+        val apiStreams = apiStreamsDeclarations.map { property ->
+            val routeOverride = property.getAnnotationsByName(API_FQN)
+                .firstNotNullOfOrNull { it.arguments.firstOrNull()?.value?.toString() }
+
+            val resolvedRoute = processRoute(
+                packageRoot = qualifiedApiPackage,
+                pkg = property.packageName.asString(),
+                file = property.containingFile!!,
+                routeOverride = routeOverride,
+                packageMappings = packageMappings,
+                supportDynamicRoute = false,
+            )
+
+            ApiStreamEntry(property.qualifiedName!!.asString(), resolvedRoute)
+        }
+
         val backendData = BackendData(initMethods, apiMethods, apiStreams).also {
             it.assertValid(throwError = { msg -> logger.error(msg) })
         }
@@ -163,10 +169,10 @@ private fun processApiFun(
 
     return if (routeOverride?.startsWith("/") == true || currPackage.startsWith(qualifiedApiPackage)) {
         val resolvedRoute = processRoute(
+            packageRoot = qualifiedApiPackage,
             pkg = annotatedFun.packageName.asString(),
-            slugFromFile = file.nameWithoutExtension.lowercase(),
+            file = file,
             routeOverride = routeOverride,
-            qualifiedPackage = qualifiedApiPackage,
             packageMappings = packageMappings,
             supportDynamicRoute = false,
         )

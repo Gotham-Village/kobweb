@@ -1,8 +1,8 @@
-[![version: 0.15.4](https://img.shields.io/badge/kobweb-0.15.4-blue)](COMPATIBILITY.md)
-[![version: 0.9.13](https://img.shields.io/badge/kobweb_cli-0.9.13-blue)](https://github.com/varabyte/kobweb-cli)
+[![version: 0.16.2](https://img.shields.io/badge/kobweb-0.16.2-blue)](COMPATIBILITY.md)
+[![version: 0.9.15](https://img.shields.io/badge/kobweb_cli-0.9.15-blue)](https://github.com/varabyte/kobweb-cli)
 <br>
-[![kotlin: 1.9.21](https://img.shields.io/badge/kotlin-1.9.21-blue?logo=kotlin)](COMPATIBILITY.md)
-[![compose: 1.5.11](https://img.shields.io/badge/compose-1.5.11-blue?logo=jetpackcompose)](COMPATIBILITY.md)
+[![kotlin: 1.9.22](https://img.shields.io/badge/kotlin-1.9.22-blue?logo=kotlin)](COMPATIBILITY.md)
+[![compose: 1.5.12](https://img.shields.io/badge/compose-1.5.12-blue?logo=jetpackcompose)](COMPATIBILITY.md)
 [![ktor: 2.3.6](https://img.shields.io/badge/ktor-2.3.6-blue)](https://ktor.io/)
 <br>
 [![Varabyte Discord](https://img.shields.io/discord/886036660767305799.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/5NZ2GKV5Cs)
@@ -68,6 +68,7 @@ Our goal is to provide:
 * an open source foundation that the community can extend
 * and much, much more!
 
+<span id="demo"></span>
 Here's a demo where we create a Compose HTML project from scratch with Markdown support and live reloading, in under
 10 seconds:
 
@@ -138,12 +139,12 @@ $ sdk install kobweb
 
 ### Don't see your favorite package manager?
 
-Please see: https://github.com/varabyte/kobweb/issues/117 and consider leaving a comment!
+Please see: https://github.com/varabyte/kobweb-cli/issues/11 and consider leaving a comment!
 
 ## Download the Kobweb binary
 
 Our binary artifact is hosted on GitHub. To download the latest, you can either
-[grab the zip or tar file from GitHub](https://github.com/varabyte/kobweb-cli/releases/tag/v0.9.13) or you can fetch
+[grab the zip or tar file from GitHub](https://github.com/varabyte/kobweb-cli/releases/tag/v0.9.15) or you can fetch
 it from your terminal:
 
 ```bash
@@ -151,19 +152,19 @@ $ cd /path/to/applications
 
 # You can either pull down the zip file
 
-$ wget https://github.com/varabyte/kobweb-cli/releases/download/v0.9.13/kobweb-0.9.13.zip
-$ unzip kobweb-0.9.13.zip
+$ wget https://github.com/varabyte/kobweb-cli/releases/download/v0.9.15/kobweb-0.9.15.zip
+$ unzip kobweb-0.9.15.zip
 
 # ... or the tar file
 
-$ wget https://github.com/varabyte/kobweb-cli/releases/download/v0.9.13/kobweb-0.9.13.tar
-$ tar -xvf kobweb-0.9.13.tar
+$ wget https://github.com/varabyte/kobweb-cli/releases/download/v0.9.15/kobweb-0.9.15.tar
+$ tar -xvf kobweb-0.9.15.tar
 ```
 
 and I recommend adding it to your path, either directly:
 
 ```bash
-$ PATH=$PATH:/path/to/applications/kobweb-0.9.13/bin
+$ PATH=$PATH:/path/to/applications/kobweb-0.9.15/bin
 $ kobweb version # to check it's working
 ```
 
@@ -171,7 +172,7 @@ or via symbolic link:
 
 ```bash
 $ cd /path/to/bin # some folder you've created that's in your PATH
-$ ln -s /path/to/applications/kobweb-0.9.13/bin/kobweb kobweb
+$ ln -s /path/to/applications/kobweb-0.9.15/bin/kobweb kobweb
 ```
 
 ## Build the Kobweb binary
@@ -225,10 +226,10 @@ you installed it.
 
 | Method                    | Instructions                                                                                                                         |
 |---------------------------|--------------------------------------------------------------------------------------------------------------------------------------|
-| Homebrew                  | `brew update`<br/>`brew upgrade kobweb`                                                                                               |
+| Homebrew                  | `brew update`<br/>`brew upgrade kobweb`                                                                                              |
 | Scoop                     | `scoop update kobweb`                                                                                                                |
 | SDKMAN!                   | `sdk upgrade kobweb`                                                                                                                 |
-| Downloaded from<br>Github | Visit the [latest release](https://github.com/varabyte/kobweb-cli/releases/tag/v0.9.13). You can find both a zip and tar file there. |
+| Downloaded from<br>Github | Visit the [latest release](https://github.com/varabyte/kobweb-cli/releases/tag/v0.9.15). You can find both a zip and tar file there. |
 
 ## Create your Kobweb site
 
@@ -392,7 +393,8 @@ this will create a page that I can then visit by going to `mysite.com/admin/sett
 > [!IMPORTANT]
 > The last part of a URL, here `settings`, is called a *slug*.
 
-By default, the slug comes from the file name, but this behavior can be overridden (more on that shortly).
+By default, the slug comes from the file name, which is converted into kebab-case, e.g. `AboutUs.kt` would transform into
+`about-us`. However, this can be overridden to whatever you want (more on that shortly).
 
 The file name `Index.kt` is special. If a page is defined inside such a file, it will be treated as the default page
 under that URL. For example, a page defined in `.../pages/admin/Index.kt` will be visited if the user visits
@@ -418,7 +420,7 @@ The above would create a page you could visit by going to `mysite.com/admin/conf
 meaning.
 
 * Begins with a slash - represent the whole route from the root
-* Ends with a slash - a slug will still be generated from the filename and appended to the route.
+* Ends with a slash - a slug will still be generated from the filename and appended to the route override.
 
 And if you set the override to "index", that behaves the same as setting the file to `Index.kt` as described above.
 
@@ -447,31 +449,45 @@ Some examples can clarify these rules (and how they behave when combined). Assum
 > [Dynamic Routes▼](https://github.com/varabyte/kobweb?tab=readme-ov-file#dynamic-routes) section) or enabling a URL
 > name that uses characters which aren't allowed in Kotlin filenames.
 
-### PackageMapping
+### Package
 
-If you don't want to change your slug but you *do* want to change a part of the route, you don't have to use a `Page`
-annotation for this. You can instead register a package mapping with a `PackageMapping` file annotation. Doing so looks
-like this:
+While the slug is derived from the filename, earlier parts of the route are derived from the file's package.
+
+A package will be converted into a route part by removing any leading or trailing underscores (as these are often used
+to work around limitations into what values and keywords are allowed in a package name, e.g. `site.pages.blog._2022` and
+`site.events.fun_`) and converting camelCase packages into hyphenated words (so `site.pages.team.ourValues` generates
+the route `/team/our-values/`).
+
+#### PackageMapping
+
+If you'd like to override the route part generated for a package, you can use the `PackageMapping` annotation.
+
+For example, let's say your team prefers not to use camelCase packages for aesthetic reasons. Or perhaps you
+intentionally want to add a leading underscore into your site's route part for some emphasis (since earlier we mentioned
+that leading underscores get removed automatically), such as in the route `/team/_internal/contact-numbers`. You can
+use package mappings for this.
+
+You apply the package mapping annotation to the current file. Using it looks like this:
 
 ```kotlin
-// site/pages/blog/_2022/PackageMapping.kt
-@file:PackageMapping("2022")
+// site/pages/team/values/PackageMapping.kt
+@file:PackageMapping("our-values")
 
-package site.pages.blog._2022
+package site.pages.blog.values
 
 import com.varabyte.kobweb.core.PackageMapping
 ```
 
-As with the `Page` route overrides, the main reason you'd want to do this is that Java / Kotlin package naming
-requirements are much stricter than what you might want to allow in a URL part. `site.com/blog/2022/mypost` reads way
-better than `site.com/blog/_2022/mypost`.
+With the above package mapping in place, a file that lives at `site/pages/team/values/Mission.kt` will be visitable at
+`/team/our-values/mission`.
 
 ### Page context
 
 Every page method provides access to its `PageContext` via the `rememberPageContext()` method.
 
-A page's context provides it access to a router, allowing you to navigate to other pages, as well as other dynamic
-information about the current page's URL (discussed in the next section).
+Critically, a page's context provides it access to a router, allowing you to navigate to other pages.
+
+It also provides dynamic information about the current page's URL (discussed in the next section).
 
 ```kotlin
 @Page
@@ -506,8 +522,9 @@ enum class Mode {
 @Composable
 fun Posts() {
     val ctx = rememberPageContext()
-    // Here, I'm assuming these params are always present, but you can
-    // use `get` instead of `getValue` to handle the nullable case.
+    // Here, I'm assuming these params are always present, but you can use
+    // `get` instead of `getValue` to handle the nullable case. Care should
+    // also be taken to parse invalid values without throwing an exception.
     val postId = ctx.route.params.getValue("id").toInt()
     val mode = Mode.from(ctx.route.params.getValue("mode"))
     /* ... */
@@ -958,6 +975,11 @@ val CustomStyle by ComponentStyle {
 }
 ```
 
+> [!TIP]
+> When testing your breakpoint-conditinal styles, you should be aware that browser dev tools let you simulate window
+> dimensions to see how your site looks at different sizes. For example, on Chrome, you can follow these instructions:
+> https://developer.chrome.com/docs/devtools/device-mode
+
 #### Color-mode aware
 
 When you define a `ComponentStyle`, an optional field is available for you to use called `colorMode`:
@@ -1135,7 +1157,7 @@ div {
   animation: mymove 5s infinite;
 }
 
-@keyframes mymove {
+@keyframes shift-right {
   from {left: 0px;}
   to {left: 200px;}
 }
@@ -1144,7 +1166,7 @@ div {
 Kobweb lets you define your keyframes in code by using the `by Keyframes` pattern:
 
 ```kotlin
-val ShiftRight by Keyframes {
+val ShiftRightKeyframes by Keyframes {
     from { Modifier.left(0.px) }
     to { Modifier.left(200.px) }
 }
@@ -1153,7 +1175,7 @@ val ShiftRight by Keyframes {
 Div(
     Modifier
         .size(100.px).backgroundColor(Colors.Red).position(Position.Relative)
-        .animation(ShiftRight.toAnimation(
+        .animation(ShiftRightKeyframes.toAnimation(
             duration = 5.s,
             iterationCount = AnimationIterationCount.Infinite
         ))
@@ -1161,9 +1183,9 @@ Div(
 )
 ```
 
-The name of the keyframes block is automatically derived from the property name (here, `ShiftRight` is converted into
-`"shift-right"`). You can then use the `toAnimation` method to convert your collection of keyframes into an animation that
-uses them, which you can pass into the `Modifier.animation` modifier.
+The name of the keyframes block is automatically derived from the property name (here, `ShiftRightKeyframes` is
+converted into `"shift-right"`). You can then use the `toAnimation` method to convert your collection of keyframes into
+an animation that uses them, which you can pass into the `Modifier.animation` modifier.
 
 > [!IMPORTANT]
 > When you declare a `Keyframes` animation, it must be public. This is because code gets generated inside a `main.kt`
@@ -1176,15 +1198,15 @@ uses them, which you can pass into the `Modifier.animation` modifier.
 >
 > ```kotlin
 > @Suppress("PRIVATE_KEYFRAMES")
-> private val SomeAnim by Keyframes { /* ... */ }
+> private val SomeKeyframes by Keyframes { /* ... */ }
 >
 > @InitSilk
 > fun registerPrivateAnim(ctx: InitSilkContext) {
->   ctx.stylesheet.registerKeyframes(SomeAnim)
+>   ctx.stylesheet.registerKeyframes(SomeKeyframes)
 > }
 > ```
 >
-> However, you are encouraged to keep your animations public and let the Kobweb Gradle plugin handle everything for you.
+> However, you are encouraged to keep your keyframes public and let the Kobweb Gradle plugin handle everything for you.
 
 ### ElementRefScope and raw HTML elements
 
@@ -1628,7 +1650,7 @@ at build time, using the filename as its path.
 For example, if I create the following file:
 
 ```markdown
-// jsMain/resources/markdown/docs/tutorial/Kobweb.kt
+// jsMain/resources/markdown/docs/tutorial/Kobweb.md
 
 # Kobweb Tutorial
 
@@ -1671,8 +1693,8 @@ fun AuthorWidget() {
 
 #### Root
 
-Within your front matter, there's a special value which, if set, will be used to render a root `@Composable` that wraps
-the code your markdown file would otherwise create. This is useful for specifying a layout for example:
+Within your front matter, there's a special value which, if set, will be used to render a root `@Composable` that adds
+the rest of your markdown code as its content. This is useful for specifying a layout for example:
 
 ```markdown
 ---
@@ -1709,7 +1731,7 @@ This allows you to give your URL a name that normal Kotlin filename rules don't 
 
 ```markdown
 ---
-routeOverride: a-star-demo
+routeOverride: a*-demo
 ---
 ```
 
@@ -1717,39 +1739,10 @@ The above will generate code like the following:
 
 ```kotlin
 @Composable
-@Page("a-star-demo")
+@Page("a*-demo")
 fun AStarDemoPage() { /* ... */
 }
 ```
-
-You can additionally override the algorithm used for converting ALL markdown files to their final name, by setting the
-markdown block's `routeOverride` callback:
-
-```kotlin
-kobweb {
-  markdown { //
-    // Given "Example.md", name will be "Example" and output will be "post_example"
-    routeOverride.set { name -> "post_${name.lowercase()}" }
-  }
-}
-```
-
-This callback will be triggered on all Markdown pages *except* `Index.md` files.
-
-Some common algorithms are provided which you can use instead of writing your own:
-
-```kotlin
-import com.varabyte.kobwebx.gradle.markdown.MarkdownBlock.RouteOverride
-
-kobweb {
-  markdown {
-    routeOverride.set(RouteOverride.KebabCase) // e.g. "ExamplePage" to "example-page"
-  }
-}
-```
-
-If you specify both a global route override and a local route override in the front matter, the front matter setting
-will take precedence.
 
 ### Kobweb Call
 
@@ -1837,7 +1830,7 @@ Press ${ColorButton} to toggle the site's current color.
 
 #### Local Imports
 
-Local imports are specified in your markdown's Front Matter (and can even affect its root declaration!):
+Local imports are specified in your markdown's front matter (and can even affect its root declaration!):
 
 ```markdown
 ---
@@ -1851,6 +1844,56 @@ imports:
 
 {{{ VisitorCounter }}}
 ```
+
+### Iterating over all markdown files
+
+It can be really useful to process all markdown files during your site's build. A common example is to collect all
+markdown articles and generate a listing page from them.
+
+You can actually do this using pure Gradle code, but it's common enough that Kobweb provides a convenience API, via the
+`markdown` block's `process` callback.
+
+You can register a callback that will be triggered at build time with a list of all markdown files in your project.
+
+```kotlin
+kobweb {
+  markdown {
+    process.set { markdownEntries ->
+      // `markdownEntries` is type `List<MarkdownEntry>`, where an entry includes the file's path, the route it will
+      // be served at, and any parsed front matter.
+
+      println("Processing markdown files:")
+      markdownEntries.forEach { entry ->
+        println("\t* ${entry.filePath} -> ${entry.route}")
+      }
+    }
+  }
+}
+```
+
+Inside the callback, you can also call `generateKotlin` and `generateMarkdown` utility methods. Here is a very rough
+example of creating a listing page for all blog posts in a site (found under the `resources/markdown/blog` folder):
+
+```kotlin
+kobweb {
+  markdown {
+    process.set { markdownEntries ->
+      generateMarkdown("blog/index.md", buildString {
+        appendLine("# Blog Index")
+        markdownEntries.forEach { entry ->
+          if (entry.filePath.startsWith("blog/")) {
+            val title = entry.frontMatter["title"] ?: "Untitled"
+            appendLine("* [$title](${entry.route})")
+          }
+        }
+      })
+    }
+  }
+}
+```
+
+Refer to the build script of [my open source blog site](https://github.com/bitspittle/bitspittle.dev/blob/main/site/build.gradle.kts)
+and search for "process.set" to see this feature in action in a production environment.
 
 ## Learning CSS through Kobweb
 
@@ -2463,10 +2506,11 @@ either of these scripts (depending on the server's platform).
 Going in more detail than this is outside the scope of this README. However, you can read my blog posts for a lot more
 information and some clear, concrete examples:
 
-* [Static site generation and deployment with Kobweb](https://bitspittle.dev/blog/2022/staticdeploy)
-* [Deploying Kobweb into the cloud](https://bitspittle.dev/blog/2023/clouddeploy)
+* [Static site generation and deployment with Kobweb](https://bitspittle.dev/blog/2022/static-deploy)
+* [Deploying Kobweb into the cloud](https://bitspittle.dev/blog/2023/cloud-deploy)
 
-## Communicating with the server
+<!-- Create a shorter ID for convenience to access a popular section -->
+## <span id="server">Communicating with the server</span>
 
 Let's say you've decided on creating a full stack website using Kobweb. This section walks you through setting it up as
 well as introducing the various APIs for communicating to the backend from the frontend.
@@ -2763,7 +2807,43 @@ server via events, API streams are a great choice.
 > You can also search online about REST vs WebSockets, as these are the technologies that API routes and API streams are
 > implemented with. Any discussions about them should apply here as well.
 
-## Creating a Kobweb Worker
+## Splitting Kobweb code across multiple modules
+
+For simplicity, new projects can choose to put all their pages and widgets inside a single application module, e.g.
+`site/`.
+
+However, you can define components and/or pages in separate modules and apply the `com.varabyte.kobweb.library` plugin
+on them (in contrast to your main module which applies the `com.varabyte.kobweb.application` plugin.)
+
+In other words, you can split up and organize your project like this:
+
+```
+my-project
+├── sitelib
+│   ├── build.gradle.kts # apply "com.varabyte.kobweb.library"
+│   └── src/jsMain
+│       └── kotlin.org.example.myproject.sitelib
+│           ├── components
+│           └── pages
+└── site
+    ├── build.gradle.kts # apply "com.varabyte.kobweb.application"
+    ├── .kobweb/conf.yaml
+    └── src/jsMain
+        └── kotlin.org.example.myproject.site
+            ├── components
+            └── pages
+```
+
+If you'd like to explore a multimodule project example, you can do so by running:
+
+```bash
+$ kobweb create examples/chat
+```
+
+which demonstrates a chat application with its auth and chat functionality each managed in their own separate modules.
+
+<!-- Create a shorter ID for convenience to access a popular section -->
+## <span id="worker">Creating a Kobweb Worker</span>
 
 ### Background: What are web workers?
 
@@ -2792,9 +2872,9 @@ Kobweb aims to make using web workers as easy as possible.
 Here's everything you have to do (we'll show examples of these steps shortly):
 
 * Create a new module and apply the Kobweb Worker Gradle plugin on it.
-* (Optional but recommended) Create a name that will be used for your worker's output file
-  * e.g. `kobweb { worker { name.set("example-worker") } }`
 * Tag the `kotlin { ... }` block in your build script with a `configAsKobwebWorker()` call.
+  * (Optional but recommended) Specify a name for your worker. Otherwise, the generic name "worker" (with a short random
+    suffix) will be used.
 * Declare a dependency on `"com.varabyte.kobweb:kobweb-worker"`.
 * Implement the `WorkerFactory` interface, providing a `WorkerStrategy` that represents the core logic of your worker.
 
@@ -2811,14 +2891,8 @@ plugins {
 group = "example.worker"
 version = "1.0-SNAPSHOT"
 
-kobweb {
-    worker {
-        name.set("example-worker")
-    }
-}
-
 kotlin {
-    configAsKobwebWorker()
+    configAsKobwebWorker("example-worker")
     sourceSets {
         jsMain.dependencies {
             implementation(libs.kobweb.worker) // or "com.varabyte.kobweb:kobweb-worker"
@@ -3211,7 +3285,7 @@ your site is rooted at `https://example.com/products/myproduct/`, then the value
 > [!NOTE]
 > If you are planning to host your site on GitHub Pages using the default `github.io` domain, you will need to set an
 > appropriate `routePrefix` value. For a concrete example of setting `routePrefix` for GitHub Pages,
-> [check out this relevant section](https://bitspittle.dev/blog/2022/staticdeploy#github-pages) from my blog post about
+> [check out this relevant section](https://bitspittle.dev/blog/2022/static-deploy#github-pages) from my blog post about
 > exporting static layout sites.
 
 Outside of setting your `routePrefix` in the `conf.yaml` file, you can design your site without explicitly mentioning
@@ -3252,40 +3326,130 @@ practice, however.
 > But, in Kobweb, since we're using the same `index.html` file for every page, we use the absolute path `/favicon.ico`,
 > or, in the case of a route prefix being set, `/${routePrefix}/favicon.ico`.
 
-## Splitting Kobweb code across multiple modules
+## Legacy Routes
 
-For simplicity, new projects can choose to put all their pages and widgets inside a single application module, e.g.
-`site/`.
+> [!NOTE]
+> If you...
+>
+> * created your site after Kobweb v0.16.0 *OR*
+> * only have single word page names, e.g. "About.kt" and "Login.kt", as well as packages that are all lowercased...
+>
+> then congratulations, you don't have to worry at all about the concerns presented in this section. You should ensure
+> that your build script's `kobweb.app.legacyRouteRedirectStrategy` is set to `DISALLOW`.
 
-However, you can define components and/or pages in separate modules and apply the `com.varabyte.kobweb.library` plugin
-on them (in contrast to your main module which applies the `com.varabyte.kobweb.application` plugin.)
+When Kobweb was first released, it used very simple logic for generating routes from code in your Kotlin project:
+- filenames for pages would be lowercased and turned into a slug
+- packages were converted into route parts as is
 
-In other words, you can split up and organize your project like this:
+`pages/home/About.kt` would become `https://example.com/home/about`, in other words.
 
+This is fine for most sites! Especially since route overrides were possible through Kobweb's `@Page` and
+`@PackageMapping` annotations.
+
+However, this choice becomes a problem when you start considering parts of a URL that represent multiple words. It is a
+common practice to use hyphens for this case, e.g. `state-of-art`, but Kobweb was not generating them, resulting in
+slugs that could sometimes be hard to read, e.g. `stateofart`.
+
+Because of this, some users had to create a lot of overrides in their site. This is fragile, as it means it can be easy
+to refactor a site later without realizing that stale names remain embedded in the code.
+
+As a result, in v0.16.0, we made the choice to change the route generating algorithms to split words up with hyphens.
+
+As a concrete example, for the page `pages/silkWidgets/SimpleGrid.kt`, Kobweb *used* to
+generate `https://example.com/silkWidgets/simplegrid`, whereas now it
+generates `https://example.com/silk-widgets/simple-grid`.
+
+If we just changed the route generation logic from one version to the next, that would totally break existing sites!
+Perhaps a user has a Kobweb site that search engines have already indexed. Or maybe there are many internal links in
+their site referencing route paths that are now no longer there.
+
+So of course, we didn't. Instead, we introduced the idea of legacy route redirects.
+
+### Legacy route redirect strategy
+
+Kobweb now defaults to supporting users visiting both the old *and* new route paths. Using the "simple-grid"
+link example above, if a user ran their site with latest, *either* path would work.
+
+However, this is not an ideal state of affairs. It is much better for a site to have a single, canonical URL for each
+route in your site. This is not only better for SEO, but it also makes it easier to reason about your site's structure.
+Therefore, Kobweb allows you to disable this feature.
+
+In fact, disabling these redirects are encouraged. New sites should disable them from the start (the `kobweb create app`
+templates started doing this with the introduction of this feature). Older sites should consider auditing their codebase
+with an eye towards disabling redirects in the near future.
+
+It is easy to set the route redirect strategy in your project's build script:
+
+```kotlin
+kobweb {
+  app {
+    legacyRouteRedirectStrategy.set(LegacyRouteRedirectStrategy.DISALLOW)
+  }
+}
 ```
-my-project
-├── sitelib
-│   ├── build.gradle.kts # apply "com.varabyte.kobweb.library"
-│   └── src/jsMain
-│       └── kotlin.org.example.myproject.sitelib
-│           ├── components
-│           └── pages
-└── site
-    ├── build.gradle.kts # apply "com.varabyte.kobweb.application"
-    ├── .kobweb/conf.yaml
-    └── src/jsMain
-        └── kotlin.org.example.myproject.site
-            ├── components
-            └── pages
+
+There are actually three strategies available: `ALLOW`, `WARN`, and `DISALLOW`. If nothing is set explicitly, the
+strategy will default to `WARN` in development and `ALLOW` in production.
+
+`ALLOW` and `WARN` are functionally the same, except `WARN` will log a warning to the dev console when a redirect
+happens. It will also be chattier about things that are happening during export time.
+
+### Redirects and static exports
+
+Even though a Kobweb site, once loaded locally, can handle redirects just fine, many users will be hosting their site on
+a static hosting provider that doesn't know anything about Kobweb. So what happens if a regular visitor bookmarked
+`https://example.com/someroute` which has since migrated to `https://example.com/some-route`? They would get a 404, and
+Kobweb wouldn't even get a chance to run its redirect logic.
+
+To prevent this from happening, Kobweb checks at export time if legacy route redirects are enabled, and if so, it will
+generate a copy of each route that has hyphens in it with alternate versions matching the old legacy way.
+
+So in the above static hosting site example, Kobweb will actually generate a snapshot for
+`https://example.com/some-route` and then a copy of the snapshot for `https://example.com/someroute`
+
+This works in a pinch. However, you should review how your static hosting provider prefers to be communicated about
+redirects. It is preferable to disable legacy route redirects in Kobweb and leverage your static hosting provider for
+this instead, as they will likely do it in a way that communicates the situation better to search engine crawlers.
+
+### Symbolic links
+
+By default, Kobweb creates a "copy" of an export snapshot using symbolic links instead of directly copying the file.
+This is a much more efficient solution, especially if pages are very large. However, if this fails for any reason
+(Windows famously require admin privileges for users to create them), this will fall back to a direct copy.
+
+Although I didn't notice any issue with my own testing, there may be static hosting providers out there that don't
+handle symbolic links well. In that case, you can force copying to happen instead:
+
+```kotlin
+kobweb {
+  app {
+    export {
+      forceCopyingForRedirects.set(true)
+    }
+  }
+}
 ```
 
-If you'd like to explore a multimodule project example, you can do so by running:
+### Disabling legacy route redirects
 
-```bash
-$ kobweb create examples/chat
-```
+If you have a pre-0.16.0 site, there are three steps you need to do, after which you can consider disabling legacy route
+redirects.
 
-which demonstrates a chat application with its auth and chat functionality each managed in their own separate modules.
+1. In your site directory, run `./gradlew kobwebListRoutes` and look for any routes that have hyphens in them.
+2. Search through your codebase to see if there are any versions of those links but with hyphens removed. If so,
+   update them.
+3. Check your static hosting provider for ways to notify them of redirects. Often, this can be done with a configuration
+   file.
+
+> [!CAUTION]
+> Although leaving legacy route redirects on will work for a while, it should be considered deprecated and is slated for
+> eventual removal.
+
+> [!TIP]
+> This [target commit](https://github.com/bitspittle/bitspittle.dev/commit/08b508ffcbb8503d1b3a7242213c8183aa9f15f3)
+> demonstrates how I upgraded my blog site (which uses Firebase) to move away from Kobweb legacy route redirecting. It's
+> way better to let Firebase handle it, because it will communicate necessary information to search engine crawlers so
+> they too can update their own indexes.
 
 ## Generating site code at compile time
 
@@ -3316,7 +3480,8 @@ val generateCodeTask = tasks.register("generateCode") {
   // You may not need an input file or dir for your task, and if so, you can exclude the next line. If you do need one,
   // I'm assuming it is a data file or files in your resources somewhere.
   val resInputDir = layout.projectDirectory.dir("src/jsMain/resources")
-  val genOutputDir = layout.buildDirectory.dir("generated/$group/src/jsMain/kotlin")
+  // $name here to create a unique output directory just for this task
+  val genOutputDir = layout.buildDirectory.dir("generated/$group/$name/src/jsMain/kotlin")
 
   inputs.dir(resInputDir).withPathSensitivity(PathSensitivity.RELATIVE)
   outputs.dir(genOutputDir)
@@ -3342,9 +3507,41 @@ kotlin {
 }
 ```
 
-If you want to see this working in action, you
-can [check out my blog site's build script here](https://github.com/bitspittle/bitspittle.dev/blob/f7208543046e25337e73b5ede07ff576623962b0/site/build.gradle.kts#L104),
-where it is used to generate a listing page for all blog posts.
+### Generating resources
+
+In case you want to generate *resources* that end up in your final site as files (e.g. `mysite.com/rss.xml`) and not
+code, the main change you need to make is migrating the line `kotlin.srcDir` to `resources.srcDir`:
+
+```kotlin
+// e.g. site/build.gradle.kts
+
+val generateResourceTask = tasks.register("generateResource") {
+  group = "myproject"
+  // $name here to create a unique output directory just for this task
+  val genOutputDir = layout.buildDirectory.dir("generated/$group/$name/src/jsMain/resources")
+
+  outputs.dir(genOutputDir)
+
+  doLast {
+    // NOTE: Use "public/" here so the export pass will find it and put it into the final site
+    genOutputDir.get().file("public/rss.xml").asFile.apply {
+      parentFile.mkdirs()
+      writeText(/* ... */)
+
+      println("Generated $absolutePath")
+    }
+  }
+}
+
+kotlin {
+  configAsKobwebApplication()
+  commonMain.dependencies { /* ... */ }
+  jsMain {
+    resources.srcDir(generateResourceTask) // <----- Set your task here
+    dependencies { /* ... */ }
+  }
+}
+```
 
 ## Adding Kobweb to an existing project
 
@@ -3458,7 +3655,7 @@ jobs:
         shell: bash
 
     env:
-      KOBWEB_CLI_VERSION: 0.9.13
+      KOBWEB_CLI_VERSION: 0.9.15
 
     steps:
       - uses: actions/checkout@v3
@@ -3635,40 +3832,42 @@ Creating a Kobweb server plugin is relatively straightforward. You'll need to:
 
 * Create a new module in your project that produces a JAR file that bundles an implementation of
   the `KobwebServerPlugin` interface.
-* Move a copy of that jar under your project's `.kobweb/server/plugins` directory.
+* Add that module as a `kobwebServerPlugin` dependency in your site's build script.
+  * This ensures a copy of that jar is put under your project's `.kobweb/server/plugins` directory.
 
 ### Create a Kobweb Server Plugin
 
-The following instructions are based on a Kobweb multimodule setup, like the one created by `kobweb create app`.
+The following steps will walk you through creating your first Kobweb Server Plugin.
+
+> [!TIP]
+> You can
+> download [this project](https://github.com/varabyte/data/raw/main/kobweb/projects/serverplugin.zip) to see the
+> completed result from applying the instructions in this section to the `kobweb create app` site.
 
 * Create a new module in your project.
   * For example, name it "demo-server-plugin".
   * Be sure to update your `settings.gradle.kts` file to include the new project.
-* Add a new entry for the `kobweb-server-project` library in `.gradle/libs.versions.toml`:
+* Add new entries for the `kobweb-server-project` library and kotlin JVM plugin in `.gradle/libs.versions.toml`:
   ```toml
   [libraries]
   kobweb-server-plugin = { module = "com.varabyte.kobweb:kobweb-server-plugin", version.ref = "kobweb" }
+
+  [plugins]
+  kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
   ```
 * **For all remaining steps, create all files / directories under your new module's directory (e.g. `demo-server-plugin/`).**
 * Create `build.gradle.kts`:
   ```kotlin
     plugins {
-      kotlin("jvm")
+      alias(libs.plugins.kotlin.jvm)
     }
     group = "org.example.app" // update to your own project's group
     version = "1.0-SNAPSHOT"
-
-    tasks.jar {
-      // Remove the version number
-      archiveFileName.set("${project.name}.jar")
-    }
 
     dependencies {
       compileOnly(libs.kobweb.server.plugin)
     }
   ```
-  * We omit the version number to prevent the accumulation of multiple versioned copies of the same plugin ended up in
-    the Kobweb server. Instead, each new version should replace the previous one.
 * Create `src/main/kotlin/DemoKobwebServerPlugin.kt`:
   ```kotlin
   import com.varabyte.kobweb.server.plugin.KobwebServerPlugin
@@ -3681,21 +3880,45 @@ The following instructions are based on a Kobweb multimodule setup, like the one
     }
   }
   ```
-  * As the Kobweb server is written in Ktor, you should familiarize yourself
-    with [Ktor's documentation](https://ktor.io/docs/plugins.html).
-* Create `src/main/resources/META-INF/services/com.varabyte.kobweb.server.plugin.KobwebServerPlugin`:
+> [!TIP]
+> As the Kobweb server is written in Ktor, you should familiarize yourself with [Ktor's documentation](https://ktor.io/docs/plugins.html).
+* Create `src/main/resources/META-INF/services/com.varabyte.kobweb.server.plugin.KobwebServerPlugin`, setting its
+  content to the fully-qualified class name of your plugin. For example:
   ```text
   org.example.app.DemoKobwebServerPlugin
   ```
-  * This helps the JDK discover service implementations bundled within a JAR. You can
-    read [this helpful article](https://www.baeldung.com/java-spi) to learn more about this useful Java feature.
+> [!NOTE]
+> If you aren't familiar with `META-INF/services`, you can
+> read [this helpful article](https://www.baeldung.com/java-spi) to learn more about service implementations, a very
+> useful Java feature.
 
-### Copy your plugin jar manually
+### Register your server plugin jar
 
-After building your JAR (`./gradlew :demo-server-plugin:jar`), manually copy it from `build/libs/` to your Kobweb
-project's `.kobweb/server/plugins` directory.
+The Kobweb Gradle Application plugin provides a way to notify it about your JAR project. Set it up, and Gradle will
+build and copy your plugin jar over for you automatically.
 
-Upon the next Kobweb server run (e.g. via `kobweb run`), if you check the logs, you should see something like this:
+In your Kobweb project's build script, include the following `kobwebServerPlugin` line in a top-level dependencies
+block:
+
+```kotlin
+// site/build.gradle.kts
+import com.varabyte.kobweb.gradle.application.artifacts.kobwebServerPlugin
+
+/* ... */
+
+dependencies {
+  kobwebServerPlugin(project(":demo-server-plugin"))
+}
+
+kotlin { /* ... */ }
+```
+
+> [!IMPORTANT]
+> You need to put the `kobwebServerPlugin` declaration inside a top-level `dependencies` block, not in one of the
+> ones nested under the `kotlin` block (such as `kotlin.jvmMain.dependencies`).
+
+Once this is set up, upon the next Kobweb server run (e.g. via `kobweb run`), if you check the logs, you should see
+something like this:
 
 ```text
 [main] INFO  ktor.application - Autoreload is disabled because the development mode is off.
@@ -3704,25 +3927,43 @@ Upon the next Kobweb server run (e.g. via `kobweb run`), if you check the logs, 
 [main] INFO  ktor.application - Responding at http://0.0.0.0:8080
 ```
 
-### Copy your plugin jar automatically
+### Hooking into Ktor routing events
 
-For convenience, the Kobweb Gradle Application plugin provides a way to notify it about your JAR task, and it will build
-and copy it over for you automatically.
+Despite the simplicity of the `KobwebServerPlugin` interface, the `application` parameter passed
+into `KobwebServerPlugin.configure` is quite powerful.
 
-In your Kobweb project's build script, include the following `notify...` line:
+While I know it may sound kind of meta, you can create and install a Ktor Application Plugin inside a Kobweb Server
+Plugin. Once you've done that, you have access to all stages of a network call, as well as some other hooks like ones
+for receiving Application lifecycle events.
+
+> [!TIP]
+> Please read the [Extending Ktor documentation](https://ktor.io/docs/custom-plugins.html) to learn more.
+
+Doing so looks like this:
 
 ```kotlin
-// site/build.gradle.kts
+import com.varabyte.kobweb.server.plugin.KobwebServerPlugin
+import io.ktor.server.application.Application
+import io.ktor.server.application.createApplicationPlugin
+import io.ktor.server.application.install
 
-kobweb { /* ... */ }
-
-notifyKobwebAboutServerPluginTask(project(":demo-server-plugin").tasks.named("jar", Jar::class))
-
-kotlin { /* ... */ }
+class DemoKobwebServerPlugin : KobwebServerPlugin {
+  override fun configure(application: Application) {
+    val demo = createApplicationPlugin("DemoKobwebServerPlugin") {
+      onCall { call -> /* ... */ } // Request comes in
+      onCallRespond { call -> /* ... */ } // Response goes out
+    }
+    application.install(demo)
+  }
+}
 ```
 
-Once this is set up, you can modify your Kobweb server plugin, quit the server if one is running, and then rerun
-`kobweb run` to have it pick up your changes automatically.
+### Changing a Kobweb Server Plugin requires a server restart
+
+It's important to note that, unlike other parts of Kobweb, Kobweb Server Plugins do NOT support live reloading. We only
+start up and configure a Kobweb server once in its lifetime.
+
+If you make a change to a Kobweb Server Plugin, you must quit and restart the server for it to take effect.
 
 ## Using your own backend with Kobweb
 
@@ -3739,6 +3980,17 @@ example, serving these files is a one-liner:
 ```kotlin
 routing {
     staticFiles("/", File(".kobweb/site"))
+}
+```
+
+If using Ktor, you should also install
+the [`IgnoreTrailingSlash` plugin](https://api.ktor.io/ktor-server/ktor-server-core/io.ktor.server.routing/-ignore-trailing-slash.html)
+so that your web server will serve `index.html` when a user visits a directory (e.g. `/docs/`) instead of returning a 404:
+
+```kotlin
+embeddedServer(...) { // `this` is `Application` in this scope
+  this.install(IgnoreTrailingSlash)
+  // Remaining configuration
 }
 ```
 

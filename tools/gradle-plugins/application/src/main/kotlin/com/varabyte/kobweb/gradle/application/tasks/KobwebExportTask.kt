@@ -10,47 +10,66 @@ import com.varabyte.kobweb.gradle.application.extensions.AppBlock
 import com.varabyte.kobweb.gradle.application.extensions.app
 import com.varabyte.kobweb.gradle.application.extensions.export
 import com.varabyte.kobweb.gradle.application.util.PlaywrightCache
+import com.varabyte.kobweb.gradle.application.util.kebabCaseToCamelCase
 import com.varabyte.kobweb.gradle.core.extensions.KobwebBlock
-import com.varabyte.kobweb.gradle.core.kmp.jsTarget
 import com.varabyte.kobweb.gradle.core.tasks.KobwebModuleTask
-import com.varabyte.kobweb.gradle.core.util.searchZipFor
-import com.varabyte.kobweb.ksp.KOBWEB_METADATA_FRONTEND
 import com.varabyte.kobweb.project.conf.KobwebConf
 import com.varabyte.kobweb.project.frontend.AppData
-import com.varabyte.kobweb.project.frontend.FrontendData
-import com.varabyte.kobweb.project.frontend.merge
 import com.varabyte.kobweb.server.api.ServerStateFile
 import com.varabyte.kobweb.server.api.SiteLayout
 import kotlinx.serialization.json.Json
 import org.gradle.api.GradleException
 import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.Provider
+import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFile
-import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.Nested
+import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
 import org.jsoup.Jsoup
 import java.io.File
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.Path
 import javax.inject.Inject
+import kotlin.io.path.exists
+import kotlin.io.path.name
 import kotlin.io.path.writeText
 import kotlin.system.measureTimeMillis
 import kotlin.time.DurationUnit
 import com.varabyte.kobweb.gradle.application.Browser as KobwebBrowser
 
+class KobwebExportConfInputs(
+    @get:Input val siteRoot: String,
+    @get:Input val routePrefix: String,
+    @get:Input val script: String,
+    @get:Input @get:Optional val api: String?,
+) {
+    constructor(kobwebConf: KobwebConf) : this(
+        siteRoot = kobwebConf.server.files.prod.siteRoot,
+        routePrefix = kobwebConf.site.routePrefix,
+        script = kobwebConf.server.files.prod.script,
+        api = kobwebConf.server.files.dev.api,
+    )
+}
+
 abstract class KobwebExportTask @Inject constructor(
-    private val kobwebConf: KobwebConf,
+    @get:Nested val confInputs: KobwebExportConfInputs,
+    @get:Input val siteLayout: SiteLayout,
     kobwebBlock: KobwebBlock,
-    private val siteLayout: SiteLayout
 ) : KobwebModuleTask(kobwebBlock, "Export the Kobweb project into a static site") {
-
-    @InputFiles
-    fun getCompileClasspath() = project.configurations.named(project.jsTarget.compileClasspath)
-
     @get:InputFile
-    abstract val appFrontendMetadataFile: RegularFileProperty
+    abstract val appDataFile: RegularFileProperty
+
+    @get:Input
+    @get:Optional
+    val legacyRouteRedirectStrategy: Provider<AppBlock.LegacyRouteRedirectStrategy> =
+        kobwebBlock.app.legacyRouteRedirectStrategy
 
     @OutputDirectory
     fun getSiteDir(): File {
-        return project.layout.projectDirectory.dir(kobwebConf.server.files.prod.siteRoot).asFile
+        return projectLayout.projectDirectory.dir(confInputs.siteRoot).asFile
     }
 
     private fun Page.takeSnapshot(url: String): String {
@@ -157,16 +176,7 @@ abstract class KobwebExportTask @Inject constructor(
         // Sever should be running since "kobwebStart" is a prerequisite for this task
         val port = ServerStateFile(kobwebApplication.kobwebFolder).content!!.port
 
-        val appData = Json.decodeFromString<AppData>(appFrontendMetadataFile.get().asFile.readText())
-        val frontendData = buildList {
-            add(appData.frontendData)
-            getCompileClasspath().get().files.forEach { file ->
-                file.searchZipFor(KOBWEB_METADATA_FRONTEND) { bytes ->
-                    add(Json.decodeFromString<FrontendData>(bytes.decodeToString()))
-                }
-            }
-        }
-            .merge(throwError = { throw GradleException(it) })
+        val frontendData = Json.decodeFromString<AppData>(appDataFile.get().asFile.readText()).frontendData
             .also { data ->
                 data.pages.toList().let { entries ->
                     if (entries.isEmpty()) {
@@ -201,7 +211,7 @@ abstract class KobwebExportTask @Inject constructor(
                     KobwebBrowser.WebKit -> playwright.webkit()
                 }
                 browserType.launch().use { browser ->
-                    val routePrefix = RoutePrefix(kobwebConf.site.routePrefix)
+                    val routePrefix = RoutePrefix(confInputs.routePrefix)
                     pages
                         .asSequence()
                         .map { it.route }
@@ -272,6 +282,82 @@ abstract class KobwebExportTask @Inject constructor(
                                 SiteLayout.STATIC -> logger.error("e: $noPagesExportedMessage")
                             }
                         }
+
+                    // If we're exporting a static site and we want to support legacy site routes, then we need to walk
+                    // through the pages we just exported and create copies of them at their legacy locations. We'll do
+                    // two passes -- a first pass where we try to create symbolic links, which works on *nix systems
+                    // and Windows *if* the user has the right permissions. If that fails, we'll do a second pass where
+                    // we copy the files over manually.
+                    val legacyRouteRedirectStrategy =
+                        legacyRouteRedirectStrategy.getOrElse(AppBlock.LegacyRouteRedirectStrategy.WARN)
+                    if (siteLayout == SiteLayout.STATIC && legacyRouteRedirectStrategy != AppBlock.LegacyRouteRedirectStrategy.DISALLOW) {
+                        val pagesRootPath = pagesRoot.toPath()
+                        var duplicationOccurred = false
+                        var symbolicLinksUsed = false
+                        fun reportPathDuplicatedForLegacySupport(modernPath: Path, legacyPath: Path) {
+                            duplicationOccurred = true
+                            logger.lifecycle("\nDuplicating \"/${pagesRootPath.relativize(modernPath)}\" as \"${legacyPath.name}\".")
+                        }
+
+                        try {
+                            if (kobwebBlock.app.export.forceCopyingForRedirects.get()) throw IOException("Forcefully abort symbolic link step")
+
+                            pagesRoot.walkTopDown().forEach { file ->
+                                if (file.isDirectory) {
+                                    // In legacy Kobweb, a package called "multiWord" became the folder "multiWord".
+                                    // Now it would become "multi-word".
+                                    if (file.name.contains('-')) {
+                                        run { // Reverse camel case: exampleRoute -> example-route
+                                            val modernPath = file.toPath()
+                                            val legacyPath =
+                                                modernPath.parent.resolve(modernPath.name.kebabCaseToCamelCase())
+                                            if (!legacyPath.exists()) Files.createSymbolicLink(legacyPath, modernPath)
+                                        }
+                                        run { // Reverse snake case -> example_route -> example-route
+                                            val modernPath = file.toPath()
+                                            val legacyPath =
+                                                modernPath.parent.resolve(modernPath.name.replace('-', '_'))
+                                            if (!legacyPath.exists()) Files.createSymbolicLink(legacyPath, modernPath)
+                                        }
+                                    }
+                                } else {
+                                    // In legacy Kobweb, a source file called "MultiWord.kt" became the file
+                                    // "multiworld.html". Now it would become "multi-word.html".
+                                    if (file.extension == "html" && file.name.contains('-')) {
+                                        val modernPath = file.toPath()
+                                        val legacyPath = modernPath.parent.resolve(modernPath.name.replace("-", ""))
+                                        if (!legacyPath.exists()) {
+                                            Files.createSymbolicLink(legacyPath, modernPath)
+                                            reportPathDuplicatedForLegacySupport(modernPath, legacyPath)
+                                        }
+                                    }
+                                }
+                            }
+
+                            symbolicLinksUsed = true
+                        } catch (_: IOException) {
+                            // If here, symbolic links aren't supported on this system. We'll fall back to manual
+                            // copying. In this case, we will only copy the html files and leave the paths alone.
+                            pagesRoot.walkTopDown().forEach { file ->
+                                if (file.isFile && file.extension == "html" && file.nameWithoutExtension.contains('-')) {
+                                    val modernPath = file.toPath()
+                                    val legacyPath = modernPath.parent.resolve(modernPath.name.replace("-", ""))
+                                    if (!legacyPath.exists()) {
+                                        Files.copy(modernPath, legacyPath)
+                                        reportPathDuplicatedForLegacySupport(modernPath, legacyPath)
+                                    }
+                                }
+                            }
+                        }
+
+                        if (duplicationOccurred && legacyRouteRedirectStrategy == AppBlock.LegacyRouteRedirectStrategy.WARN) {
+                            logger.lifecycle("") // Blank line before warning
+                            logger.warn("w: At least one page was intentionally duplicated because your site is configured to support legacy routes. You can read more about this at https://github.com/varabyte/kobweb#legacy-routes. You can disable this behavior by setting `kobweb.app.legacyRouteRedirectStrategy` to `DISALLOW` in your site's build script. Alternately, if you set it to `ALLOW`, this message will not be shown.")
+                            if (symbolicLinksUsed) {
+                                logger.lifecycle("\n⚠\uFE0F Symbolic links were used to perform the duplication(s). If this causes issues with your static hosting provider, you can set the `kobweb.export.forceCopyingForRedirects` property to true and try again.")
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -292,8 +378,8 @@ abstract class KobwebExportTask @Inject constructor(
                 }
         }
 
-        val scriptFileStr = kobwebConf.server.files.prod.script
-        val scriptFile = project.layout.projectDirectory.file(scriptFileStr).asFile
+        val scriptFileStr = confInputs.script
+        val scriptFile = projectLayout.projectDirectory.file(scriptFileStr).asFile
         if (!scriptFile.exists()) {
             throw GradleException(
                 "e: Your .kobweb/conf.yaml prod script (\"$scriptFileStr\") could not be found. This must be fixed before exporting. Perhaps search your build/ directory for \"${
@@ -318,8 +404,8 @@ abstract class KobwebExportTask @Inject constructor(
         // API routes are only supported by the Kobweb layout
         if (siteLayout == SiteLayout.KOBWEB) {
             // The api.jar is not guaranteed to exist -- not every project needs to have API routes defined.
-            kobwebConf.server.files.dev.api?.let { apiFile ->
-                val apiJarFile = project.layout.projectDirectory.file(apiFile).asFile
+            confInputs.api?.let { apiFile ->
+                val apiJarFile = projectLayout.projectDirectory.file(apiFile).asFile
                 if (apiJarFile.exists()) {
                     val destFile = systemRoot.resolve(apiJarFile.name)
                     apiJarFile.copyTo(destFile, overwrite = true)

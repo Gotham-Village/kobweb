@@ -12,15 +12,19 @@ import com.varabyte.kobweb.gradle.core.kmp.jsTarget
 import com.varabyte.kobweb.gradle.core.kmp.jvmTarget
 import com.varabyte.kobweb.gradle.core.kmp.kotlin
 import com.varabyte.kobweb.gradle.core.ksp.applyKspPlugin
+import com.varabyte.kobweb.gradle.core.ksp.setKspMode
 import com.varabyte.kobweb.gradle.core.ksp.setupKspJs
 import com.varabyte.kobweb.gradle.core.ksp.setupKspJvm
 import com.varabyte.kobweb.gradle.core.util.generateModuleMetadataFor
 import com.varabyte.kobweb.gradle.library.extensions.createLibraryBlock
+import com.varabyte.kobweb.gradle.library.extensions.index
+import com.varabyte.kobweb.gradle.library.extensions.library
 import com.varabyte.kobweb.gradle.library.tasks.KobwebGenerateIndexMetadataTask
 import com.varabyte.kobweb.gradle.library.tasks.KobwebGenerateLibraryMetadataTask
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.Task
+import org.gradle.kotlin.dsl.register
 import org.gradle.kotlin.dsl.withType
 import org.jetbrains.kotlin.gradle.targets.js.ir.KotlinJsIrTarget
 import org.jetbrains.kotlin.gradle.targets.jvm.KotlinJvmTarget
@@ -31,14 +35,18 @@ class KobwebLibraryPlugin : Plugin<Project> {
         project.pluginManager.apply(KobwebCorePlugin::class.java)
         project.kobwebBlock.createLibraryBlock()
         project.applyKspPlugin()
+        val kspProcessorMode = ProcessorMode.LIBRARY
+        project.setKspMode(kspProcessorMode)
 
         val kobwebGenerateIndexMetadataTask =
-            project.tasks.register("kobwebGenerateIndexMetadataTask", KobwebGenerateIndexMetadataTask::class.java)
-        val kobwebGenerateLibraryMetadataTask =
-            project.tasks.register("kobwebGenerateLibraryMetadataTask", KobwebGenerateLibraryMetadataTask::class.java)
+            project.tasks.register<KobwebGenerateIndexMetadataTask>("kobwebGenerateIndexMetadata")
+        val kobwebGenerateLibraryMetadataTask = project.tasks
+            .register<KobwebGenerateLibraryMetadataTask>("kobwebGenerateLibraryMetadata") {
+                indexHead.set(project.kobwebBlock.library.index.head)
+            }
         project.buildTargets.withType<KotlinJsIrTarget>().configureEach {
             val jsTarget = JsTarget(this)
-            project.setupKspJs(jsTarget, ProcessorMode.LIBRARY)
+            project.setupKspJs(jsTarget, kspProcessorMode)
             project.generateModuleMetadataFor(jsTarget)
             project.kotlin.sourceSets.named(jsTarget.mainSourceSet) {
                 resources.srcDir(kobwebGenerateLibraryMetadataTask)

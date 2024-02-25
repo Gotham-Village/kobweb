@@ -4,7 +4,9 @@ import com.varabyte.kobweb.gradle.core.extensions.KobwebBlock
 import com.varabyte.kobweb.gradle.core.kmp.JsTarget
 import com.varabyte.kobweb.gradle.core.kmp.buildTargets
 import com.varabyte.kobweb.gradle.core.kmp.kotlin
+import com.varabyte.kobweb.gradle.core.util.getResourceSources
 import com.varabyte.kobwebx.gradle.markdown.tasks.ConvertMarkdownTask
+import com.varabyte.kobwebx.gradle.markdown.tasks.ProcessMarkdownTask
 import org.gradle.api.GradleException
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -25,13 +27,36 @@ class KobwebxMarkdownPlugin : Plugin<Project> {
             create<MarkdownFeatures>("features")
         }
 
+        val processTask = project.tasks
+            .register<ProcessMarkdownTask>("kobwebxMarkdownProcess", markdownBlock)
+
         val convertTask = project.tasks
-            .register<ConvertMarkdownTask>("kobwebxMarkdownConvert", kobwebBlock, markdownBlock)
+            .register<ConvertMarkdownTask>("kobwebxMarkdownConvert", markdownBlock)
 
         project.buildTargets.withType<KotlinJsIrTarget>().configureEach {
             val jsTarget = JsTarget(this)
+
+            processTask.configure {
+                resources.set(project.getResourceSources(jsTarget))
+            }
+            convertTask.configure {
+                resources.set(project.getResourceSources(jsTarget))
+                generatedMarkdownDir.set(processTask.map { it.getGenResDir().get() })
+                pagesPackage.set(kobwebBlock.pagesPackage)
+            }
+
             project.kotlin.sourceSets.named(jsTarget.mainSourceSet) {
                 kotlin.srcDir(convertTask)
+                kotlin.srcDir(processTask.map { it.getGenSrcDir() })
+            }
+        }
+
+        project.afterEvaluate {
+            @Suppress("DEPRECATION")
+            if (markdownBlock.routeOverride.isPresent) {
+                project.logger.warn(
+                    "w: The markdown `routeOverride` property is slated for removal. It was introduced to support kebab-case URLs, but Kobweb has moved to defaulting to them instead."
+                )
             }
         }
     }

@@ -9,9 +9,6 @@ import com.varabyte.kobweb.common.navigation.RoutePrefix
 import com.varabyte.kobweb.gradle.application.BuildTarget
 import com.varabyte.kobweb.gradle.application.extensions.AppBlock
 import com.varabyte.kobweb.project.frontend.AppData
-import com.varabyte.kobweb.project.frontend.FrontendData
-import com.varabyte.kobweb.project.frontend.merge
-import org.gradle.api.GradleException
 
 private const val KOBWEB_GROUP = "com.varabyte.kobweb"
 
@@ -23,11 +20,12 @@ enum class SilkSupport {
 
 fun createMainFunction(
     appData: AppData,
-    libData: List<FrontendData>,
     silkSupport: SilkSupport,
-    appBlock: AppBlock,
+    appGlobals: Map<String, String>,
+    cleanUrls: Boolean,
     routePrefix: RoutePrefix,
-    target: BuildTarget
+    target: BuildTarget,
+    legacyRouteRedirectStrategy: AppBlock.LegacyRouteRedirectStrategy,
 ): String {
     val usingSilkFoundation = silkSupport != SilkSupport.NONE
     val usingSilkWidgets = silkSupport == SilkSupport.FULL
@@ -35,7 +33,7 @@ fun createMainFunction(
     val appFqn = appData.appEntry?.fqn
         ?: (KOBWEB_GROUP + if (usingSilkWidgets) ".silk.SilkApp" else ".core.KobwebApp")
 
-    val frontendData = (listOf(appData.frontendData) + libData).merge(throwError = { throw GradleException(it) })
+    val frontendData = appData.frontendData
     val fileBuilder = FileSpec.builder("", "main").indent(" ".repeat(4))
 
     buildList {
@@ -177,7 +175,8 @@ fun createMainFunction(
                     }
                 }
                 addStatement("}")
-                if (appBlock.cleanUrls.get()) {
+                addStatement("router.setLegacyRouteRedirectStrategy(Router.LegacyRouteRedirectStrategy.${legacyRouteRedirectStrategy.name})")
+                if (cleanUrls) {
                     addStatement("router.addRouteInterceptor {")
                     withIndent {
                         addStatement("path = path.removeSuffix(\".html\").removeSuffix(\".htm\")")
@@ -212,8 +211,6 @@ fun createMainFunction(
                 }.build())
                 addStatement("")
             }
-
-            val appGlobals = appBlock.globals.get()
 
             // Note: Below, we use %S when specifying key/value pairs. This prevents KotlinPoet from breaking
             // our text in the middle of a String.

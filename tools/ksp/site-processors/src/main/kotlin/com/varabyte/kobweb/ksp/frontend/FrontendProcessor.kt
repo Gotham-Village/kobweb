@@ -31,7 +31,6 @@ import com.varabyte.kobweb.project.frontend.FrontendData
 import com.varabyte.kobweb.project.frontend.InitKobwebEntry
 import com.varabyte.kobweb.project.frontend.InitSilkEntry
 import com.varabyte.kobweb.project.frontend.KeyframesEntry
-import com.varabyte.kobweb.project.frontend.PageEntry
 import com.varabyte.kobweb.project.frontend.assertValid
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -42,10 +41,12 @@ class FrontendProcessor(
     private val genFile: String,
     private val qualifiedPagesPackage: String,
 ) : SymbolProcessor {
-    private lateinit var pages: List<PageEntry>
-    private lateinit var kobwebInits: List<InitKobwebEntry>
-    private lateinit var silkInits: List<InitSilkEntry>
+    private val frontendVisitor = FrontendVisitor() // ComponentStyle, ComponentVariant, Keyframes
 
+    private val pageDeclarations = mutableListOf<KSFunctionDeclaration>()
+
+    private val kobwebInits = mutableListOf<InitKobwebEntry>()
+    private val silkInits = mutableListOf<InitSilkEntry>()
     private val silkStyles = mutableListOf<ComponentStyleEntry>()
     private val silkVariants = mutableListOf<ComponentVariantEntry>()
     private val keyframesList = mutableListOf<KeyframesEntry>()
@@ -56,23 +57,23 @@ class FrontendProcessor(
     // We track all files we depend on so that ksp can perform smart recompilation
     // Even though our output is aggregating so generally requires full reprocessing, this at minimum means processing
     // will be skipped if the only change is deleted file(s) that we do not depend on.
-    val fileDependencies = mutableListOf<KSFile>()
+    private val fileDependencies = mutableListOf<KSFile>()
 
     override fun process(resolver: Resolver): List<KSAnnotated> {
-        kobwebInits = resolver.getSymbolsWithAnnotation(INIT_KOBWEB_FQN).map { annotatedFun ->
+        kobwebInits += resolver.getSymbolsWithAnnotation(INIT_KOBWEB_FQN).map { annotatedFun ->
             fileDependencies.add(annotatedFun.containingFile!!)
             val name = (annotatedFun as KSFunctionDeclaration).qualifiedName!!.asString()
             InitKobwebEntry(name, acceptsContext = annotatedFun.parameters.size == 1)
-        }.toList()
+        }
 
-        silkInits = resolver.getSymbolsWithAnnotation(INIT_SILK_FQN).map { annotatedFun ->
+        silkInits += resolver.getSymbolsWithAnnotation(INIT_SILK_FQN).map { annotatedFun ->
             fileDependencies.add(annotatedFun.containingFile!!)
             val name = (annotatedFun as KSFunctionDeclaration).qualifiedName!!.asString()
             InitSilkEntry(name)
-        }.toList()
+        }
 
-        val frontendVisitor = FrontendVisitor() // ComponentStyle, ComponentVariant, Keyframes
-        resolver.getAllFiles().forEach { file ->
+        // only process files that are new to this round, since prior declarations are unchanged
+        resolver.getNewFiles().forEach { file ->
             file.accept(frontendVisitor, Unit)
 
             // TODO: consider including this as part of the first visitor? does that matter for performance?
@@ -80,15 +81,7 @@ class FrontendProcessor(
                 .also { if (it.isNotEmpty()) fileDependencies.add(file) }
         }
 
-        // must be done after packageMappings is populated
-        pages = resolver.getSymbolsWithAnnotation(PAGE_FQN).mapNotNull { annotatedFun ->
-            processPagesFun(
-                annotatedFun = annotatedFun as KSFunctionDeclaration,
-                qualifiedPagesPackage = qualifiedPagesPackage,
-                packageMappings = packageMappings,
-                logger = logger,
-            )?.also { fileDependencies.add(annotatedFun.containingFile!!) }
-        }.toList()
+        pageDeclarations += resolver.getSymbolsWithAnnotation(PAGE_FQN).map { it as KSFunctionDeclaration }
 
         return emptyList()
     }
@@ -196,16 +189,36 @@ class FrontendProcessor(
 
     override fun finish() {
         val (path, extension) = genFile.split('.')
+        val result = getProcessorResult()
         codeGenerator.createNewFileByPath(
-            Dependencies(aggregating = true, *fileDependencies.toTypedArray()),
+            Dependencies(aggregating = true, *result.fileDependencies.toTypedArray()),
             path = path,
             extensionName = extension,
         ).writer().use { writer ->
-            writer.write(Json.encodeToString(getData()))
+            writer.write(Json.encodeToString<FrontendData>(result.data))
         }
     }
 
-    fun getData(): FrontendData {
+    /**
+     * Get the finalized metadata acquired over all rounds of processing.
+     *
+     * This function should only be called from [SymbolProcessor.finish] as it relies on all rounds of processing being
+     * complete.
+     *
+     * @return A [Result] containing the finalized [FrontendData] and the file dependencies that should be
+     * passed in when using KSP's [CodeGenerator] to store the data.
+     */
+    fun getProcessorResult(): Result {
+        // pages are processed here as they rely on packageMappings, which may be populated over several rounds
+        val pages = pageDeclarations.mapNotNull { annotatedFun ->
+            processPagesFun(
+                annotatedFun = annotatedFun,
+                qualifiedPagesPackage = qualifiedPagesPackage,
+                packageMappings = packageMappings,
+                logger = logger,
+            )?.also { fileDependencies.add(annotatedFun.containingFile!!) }
+        }
+
         // TODO: maybe this should be in the gradle plugin(s) itself to also account for library+site definitions?
         val finalRouteNames = pages.map { page -> page.route }.toSet()
         pages.forEach { page ->
@@ -228,6 +241,12 @@ class FrontendProcessor(
             it.assertValid(throwError = { msg -> logger.error(msg) })
         }
 
-        return frontendData
+        return Result(frontendData, fileDependencies)
     }
+
+    /**
+     * Represents the result of [FrontendProcessor]'s processing, consisting of the generated [FrontendData] and the
+     * files that contained relevant declarations.
+     */
+    data class Result(val data: FrontendData, val fileDependencies: List<KSFile>)
 }

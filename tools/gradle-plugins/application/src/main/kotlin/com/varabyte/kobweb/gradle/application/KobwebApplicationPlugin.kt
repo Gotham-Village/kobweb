@@ -8,14 +8,19 @@ import com.varabyte.kobweb.gradle.application.extensions.export
 import com.varabyte.kobweb.gradle.application.ksp.kspBackendFile
 import com.varabyte.kobweb.gradle.application.ksp.kspFrontendFile
 import com.varabyte.kobweb.gradle.application.tasks.KobwebBrowserCacheIdTask
+import com.varabyte.kobweb.gradle.application.tasks.KobwebCacheAppDataTask
 import com.varabyte.kobweb.gradle.application.tasks.KobwebCopySupplementalResourcesTask
+import com.varabyte.kobweb.gradle.application.tasks.KobwebCopyTask
 import com.varabyte.kobweb.gradle.application.tasks.KobwebCopyWorkerJsOutputTask
 import com.varabyte.kobweb.gradle.application.tasks.KobwebCreateServerScriptsTask
+import com.varabyte.kobweb.gradle.application.tasks.KobwebExportConfInputs
 import com.varabyte.kobweb.gradle.application.tasks.KobwebExportTask
+import com.varabyte.kobweb.gradle.application.tasks.KobwebGenIndexConfInputs
 import com.varabyte.kobweb.gradle.application.tasks.KobwebGenerateApisFactoryTask
 import com.varabyte.kobweb.gradle.application.tasks.KobwebGenerateSiteEntryTask
 import com.varabyte.kobweb.gradle.application.tasks.KobwebGenerateSiteIndexTask
 import com.varabyte.kobweb.gradle.application.tasks.KobwebGenerateTask
+import com.varabyte.kobweb.gradle.application.tasks.KobwebListRoutesTask
 import com.varabyte.kobweb.gradle.application.tasks.KobwebStartTask
 import com.varabyte.kobweb.gradle.application.tasks.KobwebStopTask
 import com.varabyte.kobweb.gradle.application.tasks.KobwebUnpackServerJarTask
@@ -29,10 +34,12 @@ import com.varabyte.kobweb.gradle.core.kmp.jsTarget
 import com.varabyte.kobweb.gradle.core.kmp.jvmTarget
 import com.varabyte.kobweb.gradle.core.kmp.kotlin
 import com.varabyte.kobweb.gradle.core.ksp.applyKspPlugin
+import com.varabyte.kobweb.gradle.core.ksp.setKspMode
 import com.varabyte.kobweb.gradle.core.ksp.setupKspJs
 import com.varabyte.kobweb.gradle.core.ksp.setupKspJvm
 import com.varabyte.kobweb.gradle.core.tasks.KobwebTask
 import com.varabyte.kobweb.gradle.core.util.configureHackWorkaroundSinceWebpackTaskIsBrokenInContinuousMode
+import com.varabyte.kobweb.gradle.core.util.kobwebCacheFile
 import com.varabyte.kobweb.gradle.core.util.namedOrNull
 import com.varabyte.kobweb.project.KobwebFolder
 import com.varabyte.kobweb.project.conf.KobwebConfFile
@@ -47,6 +54,7 @@ import org.gradle.api.Project
 import org.gradle.api.Task
 import org.gradle.api.file.RegularFile
 import org.gradle.api.tasks.Copy
+import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.build.event.BuildEventsListenerRegistry
 import org.gradle.jvm.tasks.Jar
@@ -69,6 +77,8 @@ val Project.kobwebFolder: KobwebFolder
     get() = KobwebFolder.fromChildPath(layout.projectDirectory.asFile.toPath())
         ?: throw GradleException("This project is not a Kobweb project but is applying the Kobweb plugin.")
 
+internal const val KOBWEB_SERVER_PLUGIN_CONFIGURATION_NAME = "kobwebServerPlugin"
+
 @Suppress("unused") // KobwebApplicationPlugin is found by Gradle via reflection
 class KobwebApplicationPlugin @Inject constructor(
     private val buildEventsListenerRegistry: BuildEventsListenerRegistry
@@ -76,6 +86,15 @@ class KobwebApplicationPlugin @Inject constructor(
     override fun apply(project: Project) {
         project.pluginManager.apply(KobwebCorePlugin::class.java)
         project.applyKspPlugin()
+        val kspProcessorMode = ProcessorMode.APP
+        project.setKspMode(kspProcessorMode)
+
+        // A Kobweb Server Plugin is one which is loaded by the Kobweb server when it starts up. It's a way for users to
+        // configure their ktor server in ways that Kobweb does not currently expose.
+        project.configurations.register(KOBWEB_SERVER_PLUGIN_CONFIGURATION_NAME) {
+            isCanBeConsumed = false
+            isTransitive = false
+        }
 
         val kobwebFolder = project.kobwebFolder
         val kobwebConf = with(KobwebConfFile(kobwebFolder)) {
@@ -115,15 +134,17 @@ class KobwebApplicationPlugin @Inject constructor(
                 ?: if (env == ServerEnvironment.DEV) BuildTarget.DEBUG else BuildTarget.RELEASE
         val buildTarget = project.kobwebBuildTarget
 
-        val kobwebGenSiteIndexTask = project.tasks
-            .register<KobwebGenerateSiteIndexTask>("kobwebGenSiteIndex", kobwebConf, kobwebBlock, buildTarget)
+        val kobwebGenSiteIndexTask = project.tasks.register<KobwebGenerateSiteIndexTask>(
+            "kobwebGenSiteIndex", KobwebGenIndexConfInputs(kobwebConf), buildTarget, kobwebBlock
+        )
+
         val kobwebCopySupplementalResourcesTask = project.tasks.register<KobwebCopySupplementalResourcesTask>(
             "kobwebCopySupplementalResources",
-            kobwebBlock,
+            kobwebBlock.app,
             kobwebGenSiteIndexTask.map { RegularFile { it.outputs.files.singleFile } }
         )
         val kobwebCopyWorkerJsOutputTask =
-            project.tasks.register<KobwebCopyWorkerJsOutputTask>("kobwebCopyWorkerOutputJs", kobwebBlock)
+            project.tasks.register<KobwebCopyWorkerJsOutputTask>("kobwebCopyWorkerJsOutput", kobwebBlock.app)
 
         val kobwebUnpackServerJarTask = project.tasks.register<KobwebUnpackServerJarTask>("kobwebUnpackServerJar")
         val kobwebCreateServerScriptsTask = project.tasks
@@ -132,8 +153,20 @@ class KobwebApplicationPlugin @Inject constructor(
             val reuseServer = project.findProperty("kobwebReuseServer")?.let { it.toString().toBoolean() } ?: true
             project.tasks.register<KobwebStartTask>("kobwebStart", kobwebBlock, env, runLayout, reuseServer)
         }
+
+        val kobwebSyncServerPluginJarsTask = project.tasks.register<Sync>("kobwebSyncServerPluginJars") {
+            group = "kobweb"
+            description = "Copy all Kobweb server plugin jars (if any) into the server's plugins directory"
+
+            from(project.configurations.named(KOBWEB_SERVER_PLUGIN_CONFIGURATION_NAME))
+            into(project.projectDir.resolve(".kobweb/server/plugins"))
+        }
+
         kobwebStartTask.configure {
-            dependsOn(kobwebUnpackServerJarTask)
+            serverJar.set(kobwebUnpackServerJarTask.map { RegularFile { it.getServerJar() } })
+            serverPluginsDir.set(kobwebSyncServerPluginJarsTask.map {
+                project.objects.directoryProperty().apply { set(it.destinationDir) }.get()
+            })
             doLast {
                 val devScript = kobwebConf.server.files.dev.script
                 if (env == ServerEnvironment.DEV && !project.file(devScript).exists()) {
@@ -167,10 +200,21 @@ class KobwebApplicationPlugin @Inject constructor(
                 project.delete(kobwebFolder.resolve("server"))
             }
         }
-        val kobwebExportTask = project.tasks
-            .register<KobwebExportTask>("kobwebExport", kobwebConf, kobwebBlock, exportLayout)
 
-        project.tasks.register<KobwebBrowserCacheIdTask>("kobwebBrowserCacheId", kobwebBlock)
+        val kobwebCacheAppDataTask = project.tasks.register<KobwebCacheAppDataTask>("kobwebCacheAppData")
+        val kobwebExportTask = project.tasks
+            .register<KobwebExportTask>(
+                "kobwebExport",
+                KobwebExportConfInputs(kobwebConf),
+                exportLayout,
+                kobwebBlock
+            )
+
+        val kobwebListRoutesTask = project.tasks.register<KobwebListRoutesTask>("kobwebListRoutes")
+
+        project.tasks.register<KobwebBrowserCacheIdTask>("kobwebBrowserCacheId") {
+            browser.set(kobwebBlock.app.export.browser)
+        }
 
         // Note: I'm pretty sure I'm abusing build service tasks by adding a listener to it directly but I'm not sure
         // how else I'm supposed to do this
@@ -223,13 +267,27 @@ class KobwebApplicationPlugin @Inject constructor(
         project.buildTargets.withType<KotlinJsIrTarget>().configureEach {
             val jsTarget = JsTarget(this)
 
-            project.setupKspJs(jsTarget, ProcessorMode.APP)
+            project.setupKspJs(jsTarget, kspProcessorMode)
 
-            val kobwebGenSiteEntryTask = project.tasks
-                .register<KobwebGenerateSiteEntryTask>("kobwebGenSiteEntry", kobwebConf, kobwebBlock, buildTarget)
+            val kobwebGenSiteEntryTask = project.tasks.register<KobwebGenerateSiteEntryTask>(
+                "kobwebGenSiteEntry",
+                kobwebConf.site.routePrefix,
+                buildTarget,
+                kobwebBlock
+            )
+
+            kobwebCacheAppDataTask.configure {
+                appFrontendMetadataFile.set(project.kspFrontendFile(jsTarget))
+                compileClasspath.from(project.configurations.named(jsTarget.compileClasspath))
+                appDataFile.set(this.kobwebCacheFile("appData.json"))
+            }
 
             kobwebGenSiteEntryTask.configure {
-                kspGenFile.set(project.kspFrontendFile(jsTarget))
+                appDataFile.set(kobwebCacheAppDataTask.flatMap { it.appDataFile })
+            }
+
+            kobwebGenSiteIndexTask.configure {
+                compileClasspath.from(project.configurations.named(jsTarget.compileClasspath))
             }
 
             val jsRunTasks = listOf(
@@ -250,6 +308,12 @@ class KobwebApplicationPlugin @Inject constructor(
             // Register generated sources directly to compileKotlin task so that KSP doesn't process them
             project.tasks.named<Kotlin2JsCompile>(jsTarget.compileKotlin) {
                 source(kobwebGenSiteEntryTask)
+            }
+
+            // configure both kobwebCopySupplementalResourcesTask & kobwebCopyWorkerJsOutputTask
+            project.tasks.withType<KobwebCopyTask>().configureEach {
+                publicPath.set(kobwebBlock.publicPath)
+                runtimeClasspath.from(project.configurations.named(jsTarget.runtimeClasspath))
             }
 
             project.kotlin.sourceSets.named(jsTarget.mainSourceSet) {
@@ -277,7 +341,7 @@ class KobwebApplicationPlugin @Inject constructor(
             }
 
             kobwebExportTask.configure {
-                appFrontendMetadataFile.set(project.kspFrontendFile(jsTarget))
+                appDataFile.set(kobwebCacheAppDataTask.flatMap { it.appDataFile })
                 // Exporting ALWAYS spins up a dev server, so that way it loads the files it needs from dev locations
                 // before outputting them into a final prod folder.
                 check(env == ServerEnvironment.DEV)
@@ -286,6 +350,10 @@ class KobwebApplicationPlugin @Inject constructor(
                 dependsOn(kobwebCreateServerScriptsTask)
                 dependsOn(kobwebStartTask)
                 dependsOn(project.tasks.namedOrNull(jsTarget.browserProductionWebpack))
+            }
+
+            kobwebListRoutesTask.configure {
+                appDataFile.set(kobwebCacheAppDataTask.flatMap { it.appDataFile })
             }
         }
         project.buildTargets.withType<KotlinJvmTarget>().configureEach {
@@ -307,6 +375,7 @@ class KobwebApplicationPlugin @Inject constructor(
 
             kobwebGenApisFactoryTask.configure {
                 kspGenFile.set(project.kspBackendFile(jvmTarget))
+                compileClasspath.from(project.configurations.named(jvmTarget.compileClasspath))
             }
 
             // Register generated sources directly to compileKotlin task so that KSP doesn't process them
@@ -376,11 +445,10 @@ fun Project.notifyKobwebAboutBackendCodeGeneratingTask(task: TaskProvider<*>) {
  *
  * This method will create an intermediate task that copies the jar into the plugins directory, and then hooks up task
  * dependencies so that it will be called automatically before the Kobweb server runs.
- *
- * @param name An optional name you can provide for the intermediate "copy jar to plugins dir" task. You normally don't
- *   have to provide a name, but providing your own may be slightly more performant (since the task name I generate
- *   requires realizing the task, which may slightly slow down the configuration phase).
  */
+@Deprecated(
+    "This approach has been simplified. Please replace it with `dependencies { kobwebServerPlugin(...) }` instead (where `dependencies` is the top-level dependencies block and \"...\" is the dependency that represents a kobweb server plugin jar)."
+)
 fun Project.notifyKobwebAboutServerPluginTask(
     jarTask: TaskProvider<Jar>,
     name: String = "copy${project.name.kebabCaseToTitleCamelCase()}JarToKobwebServerPluginsDir"

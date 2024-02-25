@@ -9,6 +9,9 @@ import com.varabyte.kobweb.gradle.core.util.prefixQualifiedPackage
 import com.varabyte.kobwebx.gradle.markdown.ext.kobwebcall.KobwebCall
 import com.varabyte.kobwebx.gradle.markdown.ext.kobwebcall.KobwebCallBlock
 import com.varabyte.kobwebx.gradle.markdown.ext.kobwebcall.KobwebCallVisitor
+import com.varabyte.kobwebx.gradle.markdown.util.escapeQuotes
+import com.varabyte.kobwebx.gradle.markdown.util.unescapeQuotes
+import com.varabyte.kobwebx.gradle.markdown.util.unescapeTicks
 import org.commonmark.ext.front.matter.YamlFrontMatterBlock
 import org.commonmark.ext.front.matter.YamlFrontMatterVisitor
 import org.commonmark.ext.gfm.tables.TableBlock
@@ -57,6 +60,19 @@ fun String.yamlStringToKotlinString(): String {
     }
 }
 
+/**
+ * A markdown renderer that generates a Kobweb source file given an input markdown file.
+ *
+ * @property project The Gradle project that owns these markdown files.
+ * @property markdownNodeGetter A function that can be used to retrieve the AST for a given markdown file. This allows
+ *   avoiding needing to do redundant parsing.
+ * @property imports A list of additional imports to include at the top of the generated file.
+ * @property filePath The path to the markdown file being processed (relative from its `markdown` folder root).
+ * @property handlers A set of handlers that can be used to customize how different markdown nodes are rendered.
+ * @property pkg The package that the generated file should be placed in.
+ * @property funName The name of the page function that will be generated.
+ * @property reporter A reporter that can be used to log warnings and errors.
+ */
 class KotlinRenderer(
     private val project: Project,
     private val markdownNodeGetter: (path: String) -> Node?,
@@ -64,7 +80,6 @@ class KotlinRenderer(
     private val filePath: String,
     private val handlers: MarkdownHandlers,
     private val pkg: String,
-    private val routeOverrideProvider: ((String) -> String)?,
     private val funName: String,
     private val reporter: Reporter,
 ) : Renderer {
@@ -103,7 +118,7 @@ class KotlinRenderer(
                 appendLine()
 
                 append("@Page")
-                getRouteOverride(filePath, frontMatterData)?.let { append("(\"$it\")") }
+                frontMatterData?.routeOverride?.let { append("(\"$it\")") }
                 appendLine()
 
                 appendLine("@Composable")
@@ -123,18 +138,6 @@ class KotlinRenderer(
         return buildString {
             render(node, this)
         }
-    }
-
-    private fun getRouteOverride(filePath: String, frontMatterData: FrontMatterData?): String? {
-        var routeOverride = frontMatterData?.routeOverride
-        if (routeOverride == null) {
-            val inputFileName = filePath.substringAfterLast('/').substringBeforeLast('.')
-            val defaultRoute = inputFileName.lowercase()
-            if (routeOverrideProvider != null && defaultRoute != "index") {
-                routeOverride = routeOverrideProvider.invoke(inputFileName).takeIf { it != defaultRoute }
-            }
-        }
-        return routeOverride
     }
 
     private fun RenderVisitor.visitAndFinish(node: Node) {
@@ -170,7 +173,7 @@ class KotlinRenderer(
         val imports: List<String>? get() = raw["imports"]
         val routeOverride: String? get() = raw["routeOverride"]?.singleOrNull()
 
-        // Hide frontmatter data from the user that is meant to be consumed by the renderer
+        // Hide front matter data from the user that is meant to be consumed by the renderer
         val user: Map<String, List<String>>
             get() = raw.filterKeys {
                 it != "root" &&
@@ -359,7 +362,7 @@ class KotlinRenderer(
                         destinationNode.accept(this)
                         this.data
                     }
-                    val route = Route(getRouteOverride(destinationPath, frontMatterData) ?: "")
+                    val route = Route(frontMatterData?.routeOverride ?: "")
                     if (route.isDynamic) {
                         error("Markdown file link '${link.destination}' links to file with dynamic route override. This is not supported!")
                     }
